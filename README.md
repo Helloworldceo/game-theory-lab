@@ -102,6 +102,22 @@ Try removing strategies from the roster before rerunning evolution — e.g., tak
 
 ![The same evolution run with a 3% mutation rate — nothing hits exactly 0%](screenshots/4-evolution-mutation.png)
 
+### 7. Watch defection spread across a grid
+
+Scroll to **Spatial Evolutionary Dynamics** — a completely different mechanism from the population mixing above. Instead of every strategy being able to meet every other strategy in proportion to its population share, strategies live on a grid and only ever interact with their 8 immediate neighbors.
+
+The default setup drops a single **Always Defect** cell into a sea of **Always Cooperate** and starts at Generation 0:
+
+![A single defector (red) in a sea of cooperators (green), generation 0](screenshots/5-spatial-gen0.png)
+
+Click **Step** repeatedly, or **▶ Play** to animate it continuously. Each generation, every cell plays a short match against each of its 8 neighbors, then copies whichever strategy — its own or a neighbor's — scored highest in its immediate neighborhood. Watch what happens:
+
+![The same grid twenty generations later — defection has spread to 96% of the grid](screenshots/6-spatial-gen20.png)
+
+The lone defector's neighbors keep getting exploited by it, so from the perspective of anyone nearby, "be the defector" looks like the best available move — and it spreads outward, generation after generation, until it's taken over almost the whole grid. A single defector could never do this starting from a tiny share of the well-mixed population in the section above; spatial structure is what makes the difference.
+
+Now try the reverse: switch **Background** to Always Defect and **Invader** to Tit for Tat. The lone Tit for Tat cell gets wiped out in a single generation — with no other nice strategies nearby to cooperate with, it has no way to outscore its exploitative neighbors. Real invasion of a defector-dominated grid generally needs a whole cluster of cooperators arriving together, not a lone individual — try switching **Seeding** back to "Random mix" with only cooperative strategies checked above and see how differently that plays out.
+
 ## How it works, in detail
 
 ### Strategies are stateless functions
@@ -149,9 +165,25 @@ p_i''         = (1 − mutation_rate) · p_i' + mutation_rate · (1/n)   ← opt
 
 Strategies scoring above the population average grow their share; below-average strategies shrink, and without mutation can shrink all the way to (floating-point) zero — permanent extinction, exactly as Axelrod's original simulations found for the uncooperative strategies. The mutation term is a standard mutation-selection balance: a constant trickle of every strategy regardless of current fitness, so nothing is ever driven to *exactly* zero and a strategy can in principle re-invade later if the population mix shifts back in its favor.
 
+### Spatial dynamics
+
+A toroidal (wraparound, so there are no artificial edges) grid where each cell holds one strategy. Every generation:
+
+```mermaid
+flowchart TD
+    A["For every cell"] --> B["Play a short match against\neach of its 8 neighbors"]
+    B --> C["Sum the payoffs into that\ncell's total score"]
+    C --> D["Compare to its own 8 neighbors'\ntotal scores"]
+    D --> E["Copy whichever strategy\n(itself or a neighbor) scored highest"]
+```
+
+This is deliberately a *different* update rule from the population-mixing model — no explicit fitness-proportional reproduction, just deterministic "imitate the local best," matching the classic spatial-game literature (e.g. Nowak & May's 1992 "Evolutionary games and spatial chaos"). Every cell's score depends only on its immediate neighborhood, and every update is computed from the *previous* generation's grid all at once (not in place), so the order cells are processed in never matters.
+
+The "single invader" seeding mode fills the grid with one strategy and drops a second strategy into the center cell. Whether that invader spreads or dies out in the very first generation depends entirely on whether its immediate neighbors' local score is high or low relative to what it's surrounded by — there's no momentum or protection beyond what the grid structure itself provides.
+
 ### Code layout
 
-Everything lives in `index.html` with no external dependencies. Top-to-bottom: `Strategies → Payoff function → Match/tournament engine → Tournament chart & matrix rendering → Human-vs-strategy panel → Evolutionary dynamics → Stacked-area chart rendering → UI wiring`.
+Everything lives in `index.html` with no external dependencies. Top-to-bottom: `Strategies → Payoff function → Match/tournament engine → Tournament chart & matrix rendering → Human-vs-strategy panel → Evolutionary dynamics → Spatial grid dynamics → Stacked-area & grid chart rendering → UI wiring`.
 
 ## Related projects
 

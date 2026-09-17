@@ -164,6 +164,42 @@
   </div>
 
   <div class="panel">
+    <h2>Spatial Evolutionary Dynamics</h2>
+    <p style="font-size:12.5px; color:var(--text-dim); margin-top:-4px;">A completely different mechanism from the population mixing above: strategies live on a grid and only ever interact with their 8 neighbors. Each generation, every cell plays a short match against each neighbor, then copies whichever strategy (its own or a neighbor's) scored highest nearby. Spatial structure lets cooperation survive in clusters even in situations where a well-mixed population couldn't sustain it at all.</p>
+    <div class="row2">
+      <div class="slider-row">
+        <label>Grid size <span class="val" id="gridSizeVal">28</span></label>
+        <input type="range" id="gridSize" min="10" max="45" step="1" value="28" />
+      </div>
+      <div class="slider-row">
+        <label>Rounds per neighbor match <span class="val" id="gridRoundsVal">10</span></label>
+        <input type="range" id="gridRounds" min="3" max="30" step="1" value="10" />
+      </div>
+    </div>
+    <div class="slider-row">
+      <label>Seeding</label>
+      <select id="gridSeedMode" style="width:100%;">
+        <option value="random">Random mix of checked strategies</option>
+        <option value="invader">Single invader in a sea of one strategy</option>
+      </select>
+    </div>
+    <div id="invaderControls" class="matchup" style="display:none;">
+      <span style="color:var(--text-dim); font-size:12.5px;">Background:</span>
+      <select id="invaderBackground"></select>
+      <span style="color:var(--text-dim); font-size:12.5px;">Invader:</span>
+      <select id="invaderStrategy"></select>
+    </div>
+    <div class="btn-row">
+      <button id="btnGridReset" class="primary">New Grid</button>
+      <button id="btnGridPlay">▶ Play</button>
+      <button id="btnGridStep">Step ⟶</button>
+    </div>
+    <canvas id="gridCanvas" width="700" height="700" style="margin-top:10px; height:auto; aspect-ratio:1;"></canvas>
+    <div style="font-size:12px; color:var(--text-dim); margin-top:8px;" id="gridGenReadout">Generation 0</div>
+    <div id="gridLegend" style="display:flex; flex-wrap:wrap; gap:12px; font-size:11px; color:var(--text-dim); margin-top:6px;"></div>
+  </div>
+
+  <div class="panel">
     <details>
       <summary>How this works</summary>
       <p><b>Iterated Prisoner's Dilemma:</b> two players repeatedly choose to Cooperate or Defect without communicating. Defecting always scores at least as well as cooperating in a single round, but mutual cooperation beats mutual defection — the tension between individual and collective incentive is the whole point of the game.</p>
@@ -172,6 +208,7 @@
       <p><b>Evolutionary dynamics:</b> instead of one tournament, imagine a population where each strategy's share grows or shrinks based on its average payoff against the current population — better-than-average strategies grow, worse-than-average strategies shrink toward extinction. This is the same replicator-dynamics idea used across evolutionary biology and economics, applied to Axelrod's original strategy set. A small <b>mutation rate</b> keeps a constant trickle of every strategy in the mix regardless of fitness, so nothing is ever permanently and completely wiped out.</p>
       <p><b>Beyond the Prisoner's Dilemma:</b> the payoff matrix presets switch between classic 2x2 symmetric games by reordering the same four values. Prisoner's Dilemma (T&gt;R&gt;P&gt;S) rewards defection individually even though mutual cooperation is better for both. Stag Hunt (R&gt;T&gt;P&gt;S) makes mutual cooperation the single best outcome, but trusting your partner is risky. Chicken (T&gt;R&gt;S&gt;P) makes mutual defection the worst outcome for both — better to back down than crash together. Deadlock (T&gt;P&gt;R&gt;S) removes the dilemma entirely: defecting is just better, period.</p>
       <p><b>Play it yourself:</b> the "Play Against a Strategy Yourself" panel lets you personally face off against any strategy, one click at a time, under whatever payoff matrix is currently active — the fastest way to feel why Tit for Tat is so hard to exploit, or why Stag Hunt tempts you to defect even when you'd rather cooperate.</p>
+      <p><b>Spatial dynamics:</b> the population-mixing evolution above assumes every strategy can meet every other strategy with a probability equal to its population share — a "well-mixed" population. Real populations aren't like that: who you interact with depends on who's near you. The spatial grid models this directly — each cell only ever plays its 8 neighbors, and copies the best-performing strategy in its immediate neighborhood (including itself) each generation. The default invader scenario (a single Always Defect cell dropped into a sea of Always Cooperate) shows exactly why spatial structure matters: that lone defector's neighbors get repeatedly exploited, so it looks like the best strategy nearby and gets copied — and the defection spreads outward generation by generation until it dominates almost the entire grid, something a single defector could never do starting from a tiny share of a well-mixed population above. The reverse experiment is just as informative: try a single Tit for Tat cell dropped into a sea of Always Defect instead, and watch it get wiped out in one generation — an isolated nice strategy with no others nearby to cooperate with has no way to outscore its exploitative neighbors. Real invasion of a defector-dominated space generally needs a whole cluster of cooperators arriving together, not a lone individual.</p>
     </details>
   </div>
 </div>
@@ -245,6 +282,13 @@
 
   const humanOpponentSel = document.getElementById('humanOpponent');
   STRATEGIES.forEach((s, i) => humanOpponentSel.appendChild(new Option(s.name, s.id, i === 2, i === 2)));
+
+  const invaderBackgroundSel = document.getElementById('invaderBackground');
+  const invaderStrategySel = document.getElementById('invaderStrategy');
+  STRATEGIES.forEach((s, i) => {
+    invaderBackgroundSel.appendChild(new Option(s.name, s.id, i === 0, i === 0)); // Always Cooperate
+    invaderStrategySel.appendChild(new Option(s.name, s.id, i === 1, i === 1)); // Always Defect
+  });
 
   // ---------- Game presets ----------
   const GAME_PRESETS = [
@@ -503,6 +547,128 @@
     el.innerHTML = '<b style="font-size:12px;">Final population:</b><ul class="rank-list">' + order.map((o) => `<li><span>${o.s.name}</span><span style="font-family:var(--mono);">${(o.share * 100).toFixed(2)}%</span></li>`).join('') + '</ul>';
   }
 
+  // ---------- Spatial evolutionary dynamics ----------
+  let spatialGrid = null; // spatialGrid[row][col] = strategy id string
+  let gridGen = 0;
+  let gridPlaying = false;
+
+  function gridSize() { return +document.getElementById('gridSize').value; }
+
+  function seedGrid() {
+    const n = gridSize();
+    spatialGrid = Array.from({ length: n }, () => new Array(n));
+    gridGen = 0;
+    const mode = document.getElementById('gridSeedMode').value;
+    if (mode === 'invader') {
+      const bg = invaderBackgroundSel.value, inv = invaderStrategySel.value;
+      for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) spatialGrid[r][c] = bg;
+      spatialGrid[Math.floor(n / 2)][Math.floor(n / 2)] = inv;
+    } else {
+      const strats = selectedStrategies();
+      const ids = strats.length ? strats.map((s) => s.id) : STRATEGIES.map((s) => s.id);
+      for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) spatialGrid[r][c] = ids[Math.floor(Math.random() * ids.length)];
+    }
+    document.getElementById('gridGenReadout').textContent = 'Generation 0';
+    drawGrid();
+    drawGridLegend();
+  }
+
+  function neighborsOf(r, c, n) {
+    const out = [];
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        out.push([(r + dr + n) % n, (c + dc + n) % n]); // toroidal wraparound
+      }
+    }
+    return out;
+  }
+
+  function stepGrid() {
+    const n = gridSize();
+    if (!spatialGrid || spatialGrid.length !== n) { seedGrid(); return; }
+    const rounds = +document.getElementById('gridRounds').value;
+    const noise = +document.getElementById('noise').value;
+    const pay = payoffs();
+    const scores = Array.from({ length: n }, () => new Array(n).fill(0));
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        const me = byId[spatialGrid[r][c]];
+        let total = 0;
+        for (const [nr, nc] of neighborsOf(r, c, n)) {
+          const opp = byId[spatialGrid[nr][nc]];
+          const { scoreA } = playMatch(me, opp, rounds, noise, pay);
+          total += scoreA;
+        }
+        scores[r][c] = total;
+      }
+    }
+    const next = Array.from({ length: n }, () => new Array(n));
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        let bestScore = scores[r][c], bestId = spatialGrid[r][c];
+        for (const [nr, nc] of neighborsOf(r, c, n)) {
+          if (scores[nr][nc] > bestScore) { bestScore = scores[nr][nc]; bestId = spatialGrid[nr][nc]; }
+        }
+        next[r][c] = bestId;
+      }
+    }
+    spatialGrid = next;
+    gridGen++;
+    document.getElementById('gridGenReadout').textContent = 'Generation ' + gridGen;
+    drawGrid();
+    drawGridLegend();
+  }
+
+  const gridCanvas = document.getElementById('gridCanvas');
+  const gctx = gridCanvas.getContext('2d');
+  function drawGrid() {
+    if (!spatialGrid) return;
+    const dpr = fitCanvas(gridCanvas);
+    const w = gridCanvas.width, h = gridCanvas.height;
+    const n = spatialGrid.length;
+    const cell = Math.min(w, h) / n;
+    gctx.clearRect(0, 0, w, h);
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        gctx.fillStyle = byId[spatialGrid[r][c]].color;
+        gctx.fillRect(c * cell, r * cell, Math.ceil(cell), Math.ceil(cell));
+      }
+    }
+  }
+  function drawGridLegend() {
+    if (!spatialGrid) return;
+    const counts = {};
+    for (const row of spatialGrid) for (const id of row) counts[id] = (counts[id] || 0) + 1;
+    const total = spatialGrid.length * spatialGrid.length;
+    const order = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    document.getElementById('gridLegend').innerHTML = order
+      .map(([id, n]) => `<span style="display:inline-flex;align-items:center;gap:5px;"><i style="width:9px;height:9px;border-radius:50%;background:${byId[id].color};display:inline-block;"></i>${byId[id].name} (${((n / total) * 100).toFixed(1)}%)</span>`)
+      .join('');
+  }
+
+  async function playGrid() {
+    gridPlaying = !gridPlaying;
+    document.getElementById('btnGridPlay').textContent = gridPlaying ? 'Pause' : '▶ Play';
+    while (gridPlaying) {
+      stepGrid();
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+  }
+
+  document.getElementById('btnGridReset').addEventListener('click', seedGrid);
+  document.getElementById('btnGridStep').addEventListener('click', () => { gridPlaying = false; document.getElementById('btnGridPlay').textContent = '▶ Play'; stepGrid(); });
+  document.getElementById('btnGridPlay').addEventListener('click', playGrid);
+  document.getElementById('gridSeedMode').addEventListener('change', () => {
+    document.getElementById('invaderControls').style.display = document.getElementById('gridSeedMode').value === 'invader' ? 'flex' : 'none';
+    seedGrid();
+  });
+  document.getElementById('gridSize').addEventListener('change', seedGrid);
+  invaderBackgroundSel.addEventListener('change', seedGrid);
+  invaderStrategySel.addEventListener('change', seedGrid);
+  bindSlider('gridSize', 'gridSizeVal', (v) => String(v));
+  bindSlider('gridRounds', 'gridRoundsVal', (v) => String(v));
+
   // ---------- Canvas util ----------
   function fitCanvas(canvas) {
     const rect = canvas.getBoundingClientRect();
@@ -514,6 +680,7 @@
 
   // initial render
   runTournament();
+  seedGrid();
 })();
 </script>
 </body>
