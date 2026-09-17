@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Game Theory Lab — Iterated Prisoner's Dilemma</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0e14;
+    --panel: #131826;
+    --panel-2: #1a2133;
+    --border: #262e42;
+    --text: #e7ebf3;
+    --text-dim: #8b93a7;
+    --accent: #2dd4bf;
+    --accent-2: #5eb0ff;
+    --good: #4ade80;
+    --bad: #f87171;
+    --mono: 'SF Mono', 'Fira Code', ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; padding: 20px; }
+  h1 { font-size: 20px; margin: 0 0 4px; font-weight: 700; }
+  .subtitle { color: var(--text-dim); font-size: 13px; margin: 0 0 18px; }
+  .wrap { max-width: 1280px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .row2 { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); margin: 0 0 12px; font-weight: 700; }
+  canvas { display: block; width: 100%; border-radius: 8px; background: var(--panel-2); }
+  button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { background: var(--accent); color: #0b0e14; border-color: var(--accent); }
+  button.primary:hover { filter: brightness(1.1); color: #0b0e14; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button:active:not(:disabled) { transform: scale(0.97); }
+  select { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-size: 13px; }
+  label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+  .slider-row { margin-bottom: 12px; }
+  .slider-row .val { float: right; font-family: var(--mono); color: var(--text); font-size: 12px; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .strategy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; margin-bottom: 4px; }
+  .strategy-chk { display: flex; align-items: center; gap: 7px; font-size: 12.5px; padding: 3px 0; }
+  .strategy-chk .swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .payoff-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 4px; }
+  .payoff-cell { text-align: center; }
+  .payoff-cell label { text-align: center; }
+  .matchup { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .moves-row { display: flex; gap: 3px; flex-wrap: wrap; min-height: 22px; margin: 4px 0; }
+  .move-dot { width: 16px; height: 16px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: #0b0e14; }
+  .move-c { background: var(--good); }
+  .move-d { background: var(--bad); }
+  table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin-top: 8px; }
+  th, td { padding: 5px 6px; text-align: center; border: 1px solid var(--border); font-family: var(--mono); }
+  th { color: var(--text-dim); font-weight: 600; background: var(--panel-2); font-size: 10.5px; }
+  td.rowlabel, th.rowlabel { text-align: left; color: var(--text-dim); font-family: inherit; }
+  .rank-list { font-size: 12.5px; }
+  .rank-list li { margin-bottom: 4px; display: flex; justify-content: space-between; }
+  details { margin-top: 4px; }
+  summary { cursor: pointer; font-size: 12px; color: var(--accent); font-weight: 600; user-select: none; }
+  details p { font-size: 12.5px; color: var(--text-dim); line-height: 1.55; }
+  code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-family: var(--mono); font-size: 11.5px; color: var(--accent-2); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div>
+    <h1>Game Theory Lab</h1>
+    <p class="subtitle">Iterated Prisoner's Dilemma: round-robin tournament, then evolutionary dynamics across generations.</p>
+  </div>
+
+  <div class="row2">
+    <div class="panel">
+      <h2>Strategies &amp; Payoffs</h2>
+      <div id="strategyGrid" class="strategy-grid"></div>
+      <details style="margin-top:8px;">
+        <summary>Payoff matrix (editable)</summary>
+        <div class="payoff-grid" style="margin-top:10px;">
+          <div class="payoff-cell"><label>T (temptation)</label><input type="range" id="payT" min="0" max="10" step="0.5" value="5" style="width:100%"/><div style="text-align:center;font-family:var(--mono);font-size:11px;" id="payTVal">5.0</div></div>
+          <div class="payoff-cell"><label>R (reward)</label><input type="range" id="payR" min="0" max="10" step="0.5" value="3" style="width:100%"/><div style="text-align:center;font-family:var(--mono);font-size:11px;" id="payRVal">3.0</div></div>
+          <div class="payoff-cell"><label>P (punishment)</label><input type="range" id="payP" min="0" max="10" step="0.5" value="1" style="width:100%"/><div style="text-align:center;font-family:var(--mono);font-size:11px;" id="payPVal">1.0</div></div>
+          <div class="payoff-cell"><label>S (sucker)</label><input type="range" id="payS" min="0" max="10" step="0.5" value="0" style="width:100%"/><div style="text-align:center;font-family:var(--mono);font-size:11px;" id="paySVal">0.0</div></div>
+        </div>
+        <p>Both cooperate → each gets R. Both defect → each gets P. One defects, one cooperates → defector gets T, cooperator gets S. For it to be a Prisoner's Dilemma you need T &gt; R &gt; P &gt; S.</p>
+      </details>
+      <div class="slider-row" style="margin-top:10px;">
+        <label>Noise (chance a move is flipped) <span class="val" id="noiseVal">0%</span></label>
+        <input type="range" id="noise" min="0" max="0.3" step="0.01" value="0" />
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Watch Two Strategies Play</h2>
+      <div class="matchup">
+        <select id="matchA"></select>
+        <span style="color:var(--text-dim)">vs</span>
+        <select id="matchB"></select>
+        <button id="btnPlayMatch" class="primary">▶ Play 20 rounds</button>
+      </div>
+      <div id="matchLabelA" style="font-size:11px; color:var(--text-dim);"></div>
+      <div id="movesA" class="moves-row"></div>
+      <div id="matchLabelB" style="font-size:11px; color:var(--text-dim); margin-top:4px;"></div>
+      <div id="movesB" class="moves-row"></div>
+      <div id="matchScore" style="font-family:var(--mono); font-size:13px; margin-top:8px; color:var(--text);"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Round-Robin Tournament</h2>
+    <div class="slider-row" style="max-width:320px;">
+      <label>Rounds per match <span class="val" id="roundsVal">150</span></label>
+      <input type="range" id="rounds" min="10" max="500" step="10" value="150" />
+    </div>
+    <div class="btn-row">
+      <button id="btnTournament" class="primary">Run Tournament</button>
+    </div>
+    <canvas id="tourneyCanvas" width="1200" height="260" style="margin-top:14px; height:260px;"></canvas>
+    <div id="matrixWrap" style="overflow-x:auto; margin-top:12px;"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Evolutionary Dynamics</h2>
+    <p style="font-size:12.5px; color:var(--text-dim); margin-top:-4px;">Every checked strategy above starts with an equal share of the population. Each generation, strategies reproduce in proportion to how well they scored against the <i>current</i> population mix (replicator dynamics) — using the average payoffs from the tournament above.</p>
+    <div class="slider-row" style="max-width:320px;">
+      <label>Generations <span class="val" id="genVal">150</span></label>
+      <input type="range" id="generations" min="20" max="400" step="10" value="150" />
+    </div>
+    <div class="btn-row">
+      <button id="btnEvolve" class="primary">Run Evolution</button>
+      <button id="btnStopEvolve" disabled>Stop</button>
+    </div>
+    <canvas id="evoCanvas" width="1200" height="280" style="margin-top:14px; height:280px;"></canvas>
+    <div id="evoLegend" style="display:flex; flex-wrap:wrap; gap:12px; font-size:11px; color:var(--text-dim); margin-top:8px;"></div>
+    <div id="evoRanking" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="panel">
+    <details>
+      <summary>How this works</summary>
+      <p><b>Iterated Prisoner's Dilemma:</b> two players repeatedly choose to Cooperate or Defect without communicating. Defecting always scores at least as well as cooperating in a single round, but mutual cooperation beats mutual defection — the tension between individual and collective incentive is the whole point of the game.</p>
+      <p><b>Tournament:</b> every strategy plays every strategy (including itself) for a fixed number of rounds; scores accumulate round by round using the payoff matrix above. This recreates Robert Axelrod's famous 1980s computer tournaments, where the simple <code>Tit for Tat</code> (cooperate first, then copy whatever the opponent just did) repeatedly beat much more elaborate strategies.</p>
+      <p><b>Noise:</b> with noise &gt; 0, a strategy's intended move is occasionally flipped — simulating miscommunication or execution error. This tends to hurt unforgiving strategies like Grim Trigger (one accidental defection locks in permanent retaliation) more than forgiving ones like Pavlov or Tit for Two Tats.</p>
+      <p><b>Evolutionary dynamics:</b> instead of one tournament, imagine a population where each strategy's share grows or shrinks based on its average payoff against the current population — better-than-average strategies grow, worse-than-average strategies shrink toward extinction. This is the same replicator-dynamics idea used across evolutionary biology and economics, applied to Axelrod's original strategy set.</p>
+    </details>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------- Strategies ----------
+  const STRATEGIES = [
+    { id: 'alwaysCooperate', name: 'Always Cooperate', color: '#4ade80', fn: () => 'C' },
+    { id: 'alwaysDefect', name: 'Always Defect', color: '#f87171', fn: () => 'D' },
+    { id: 'titForTat', name: 'Tit for Tat', color: '#5eb0ff', fn: (my, opp) => (opp.length === 0 ? 'C' : opp[opp.length - 1]) },
+    { id: 'suspiciousTFT', name: 'Suspicious Tit for Tat', color: '#f472b6', fn: (my, opp) => (opp.length === 0 ? 'D' : opp[opp.length - 1]) },
+    { id: 'grimTrigger', name: 'Grim Trigger', color: '#fb923c', fn: (my, opp) => (opp.includes('D') ? 'D' : 'C') },
+    { id: 'titForTwoTats', name: 'Tit for Two Tats', color: '#a78bfa', fn: (my, opp) => { const n = opp.length; if (n < 2) return 'C'; return opp[n - 1] === 'D' && opp[n - 2] === 'D' ? 'D' : 'C'; } },
+    { id: 'pavlov', name: 'Pavlov (Win-Stay, Lose-Shift)', color: '#facc15', fn: (my, opp) => { const n = my.length; if (n === 0) return 'C'; const lastMy = my[n - 1], lastOpp = opp[n - 1]; const good = lastOpp === 'C'; return good ? lastMy : lastMy === 'C' ? 'D' : 'C'; } },
+    { id: 'random', name: 'Random', color: '#94a3b8', fn: () => (Math.random() < 0.5 ? 'C' : 'D') },
+  ];
+  const byId = Object.fromEntries(STRATEGIES.map((s) => [s.id, s]));
+
+  function payoffs() {
+    return { T: +document.getElementById('payT').value, R: +document.getElementById('payR').value, P: +document.getElementById('payP').value, S: +document.getElementById('payS').value };
+  }
+  function payoff(mine, theirs, pay) {
+    if (mine === 'C' && theirs === 'C') return pay.R;
+    if (mine === 'C' && theirs === 'D') return pay.S;
+    if (mine === 'D' && theirs === 'C') return pay.T;
+    return pay.P;
+  }
+
+  function playMatch(stratA, stratB, rounds, noise, pay) {
+    const movesA = [], movesB = [];
+    let scoreA = 0, scoreB = 0;
+    for (let i = 0; i < rounds; i++) {
+      let a = stratA.fn(movesA, movesB);
+      let b = stratB.fn(movesB, movesA);
+      if (noise > 0) {
+        if (Math.random() < noise) a = a === 'C' ? 'D' : 'C';
+        if (Math.random() < noise) b = b === 'C' ? 'D' : 'C';
+      }
+      movesA.push(a);
+      movesB.push(b);
+      scoreA += payoff(a, b, pay);
+      scoreB += payoff(b, a, pay);
+    }
+    return { scoreA, scoreB, movesA, movesB };
+  }
+
+  function selectedStrategies() {
+    return STRATEGIES.filter((s) => document.getElementById('chk-' + s.id).checked);
+  }
+
+  // ---------- Strategy checklist UI ----------
+  const grid = document.getElementById('strategyGrid');
+  STRATEGIES.forEach((s) => {
+    const div = document.createElement('label');
+    div.className = 'strategy-chk';
+    div.innerHTML = `<input type="checkbox" id="chk-${s.id}" checked style="accent-color:${s.color}"/><span class="swatch" style="background:${s.color}"></span>${s.name}`;
+    grid.appendChild(div);
+  });
+
+  const matchA = document.getElementById('matchA');
+  const matchB = document.getElementById('matchB');
+  STRATEGIES.forEach((s, i) => {
+    matchA.appendChild(new Option(s.name, s.id, i === 2, i === 2));
+    matchB.appendChild(new Option(s.name, s.id, i === 4, i === 4));
+  });
+
+  function bindSlider(id, valId, fmt) {
+    const el = document.getElementById(id);
+    document.getElementById(valId).textContent = fmt(+el.value);
+    el.addEventListener('input', () => (document.getElementById(valId).textContent = fmt(+el.value)));
+  }
+  bindSlider('payT', 'payTVal', (v) => v.toFixed(1));
+  bindSlider('payR', 'payRVal', (v) => v.toFixed(1));
+  bindSlider('payP', 'payPVal', (v) => v.toFixed(1));
+  bindSlider('payS', 'paySVal', (v) => v.toFixed(1));
+  bindSlider('noise', 'noiseVal', (v) => Math.round(v * 100) + '%');
+  bindSlider('rounds', 'roundsVal', (v) => String(v));
+  bindSlider('generations', 'genVal', (v) => String(v));
+
+  // ---------- Manual match playback ----------
+  async function playManualMatch() {
+    const sa = byId[matchA.value], sb = byId[matchB.value];
+    const pay = payoffs();
+    const rounds = 20;
+    document.getElementById('matchLabelA').textContent = sa.name;
+    document.getElementById('matchLabelB').textContent = sb.name;
+    const elA = document.getElementById('movesA'), elB = document.getElementById('movesB');
+    elA.innerHTML = ''; elB.innerHTML = '';
+    document.getElementById('matchScore').textContent = '';
+    document.getElementById('btnPlayMatch').disabled = true;
+    const movesA = [], movesB = [];
+    let scoreA = 0, scoreB = 0;
+    const noise = +document.getElementById('noise').value;
+    for (let i = 0; i < rounds; i++) {
+      let a = sa.fn(movesA, movesB);
+      let b = sb.fn(movesB, movesA);
+      if (noise > 0) {
+        if (Math.random() < noise) a = a === 'C' ? 'D' : 'C';
+        if (Math.random() < noise) b = b === 'C' ? 'D' : 'C';
+      }
+      movesA.push(a); movesB.push(b);
+      scoreA += payoff(a, b, pay); scoreB += payoff(b, a, pay);
+      const dotA = document.createElement('span'); dotA.className = 'move-dot ' + (a === 'C' ? 'move-c' : 'move-d'); dotA.textContent = a; elA.appendChild(dotA);
+      const dotB = document.createElement('span'); dotB.className = 'move-dot ' + (b === 'C' ? 'move-c' : 'move-d'); dotB.textContent = b; elB.appendChild(dotB);
+      document.getElementById('matchScore').textContent = `${sa.name}: ${scoreA}   —   ${sb.name}: ${scoreB}`;
+      await new Promise((r) => setTimeout(r, 90));
+    }
+    document.getElementById('btnPlayMatch').disabled = false;
+  }
+  document.getElementById('btnPlayMatch').addEventListener('click', playManualMatch);
+
+  // ---------- Tournament ----------
+  let lastMatrix = null; // avg payoff per round, matrix[i][j] = strat i's avg score/round vs strat j
+  let lastStrats = null;
+
+  function runTournament() {
+    const strats = selectedStrategies();
+    if (strats.length === 0) return;
+    const rounds = +document.getElementById('rounds').value;
+    const noise = +document.getElementById('noise').value;
+    const pay = payoffs();
+    const n = strats.length;
+    const matrix = Array.from({ length: n }, () => Array(n).fill(0));
+    const totals = Array(n).fill(0);
+    for (let i = 0; i < n; i++) {
+      for (let j = i; j < n; j++) {
+        const { scoreA, scoreB } = playMatch(strats[i], strats[j], rounds, noise, pay);
+        matrix[i][j] = scoreA / rounds;
+        matrix[j][i] = scoreB / rounds;
+        totals[i] += scoreA;
+        if (i !== j) totals[j] += scoreB;
+      }
+    }
+    lastMatrix = matrix;
+    lastStrats = strats;
+    drawTournamentChart(strats, totals);
+    drawMatrix(strats, matrix);
+  }
+
+  function drawTournamentChart(strats, totals) {
+    const canvas = document.getElementById('tourneyCanvas');
+    const dpr = fitCanvas(canvas);
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#1a2133';
+    ctx.fillRect(0, 0, w, h);
+    const order = strats.map((s, i) => ({ s, total: totals[i] })).sort((a, b) => b.total - a.total);
+    const maxTotal = Math.max(...totals, 1);
+    const barH = Math.min(34 * dpr, (h - 20 * dpr) / order.length - 8 * dpr);
+    const gap = (h - barH * order.length) / (order.length + 1);
+    const labelW = 170 * dpr;
+    order.forEach((o, idx) => {
+      const y = gap * (idx + 1) + barH * idx;
+      const maxBarW = w - labelW - 70 * dpr;
+      const barW = (o.total / maxTotal) * maxBarW;
+      ctx.fillStyle = o.s.color;
+      ctx.globalAlpha = 0.9;
+      ctx.fillRect(labelW, y, barW, barH);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#e7ebf3';
+      ctx.font = (12 * dpr) + 'px -apple-system, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(o.s.name, labelW - 10 * dpr, y + barH / 2);
+      ctx.textAlign = 'left';
+      ctx.fillText(Math.round(o.total).toLocaleString(), labelW + barW + 8 * dpr, y + barH / 2);
+    });
+  }
+
+  function drawMatrix(strats, matrix) {
+    const wrap = document.getElementById('matrixWrap');
+    let html = '<table><tr><th class="rowlabel">avg pts/round</th>' + strats.map((s) => `<th>${abbr(s.name)}</th>`).join('') + '</tr>';
+    strats.forEach((s, i) => {
+      html += `<tr><td class="rowlabel">${s.name}</td>` + strats.map((s2, j) => `<td>${matrix[i][j].toFixed(2)}</td>`).join('') + '</tr>';
+    });
+    html += '</table>';
+    wrap.innerHTML = html;
+  }
+  function abbr(name) { return name.split(' ').map((w) => w[0]).join('').slice(0, 4); }
+
+  document.getElementById('btnTournament').addEventListener('click', runTournament);
+
+  // ---------- Evolutionary dynamics ----------
+  let evolveActive = false;
+  async function runEvolution() {
+    if (!lastMatrix || lastStrats.length === 0 || lastStrats.some((s, i) => selectedStrategies()[i] !== s) || lastStrats.length !== selectedStrategies().length) {
+      runTournament();
+    }
+    const strats = lastStrats;
+    const matrix = lastMatrix;
+    const n = strats.length;
+    if (n === 0) return;
+    let shares = Array(n).fill(1 / n);
+    const generations = +document.getElementById('generations').value;
+    const history = [shares.slice()];
+
+    evolveActive = true;
+    document.getElementById('btnEvolve').disabled = true;
+    document.getElementById('btnStopEvolve').disabled = false;
+
+    for (let g = 0; g < generations && evolveActive; g++) {
+      const fitness = shares.map((_, i) => matrix[i].reduce((sum, m, j) => sum + m * shares[j], 0));
+      const avgFitness = fitness.reduce((a, b, i) => a + b * shares[i], 0);
+      const newShares = shares.map((s, i) => (avgFitness > 0 ? (s * fitness[i]) / avgFitness : s));
+      const total = newShares.reduce((a, b) => a + b, 0);
+      shares = newShares.map((s) => s / total);
+      history.push(shares.slice());
+      if (g % 3 === 0 || g === generations - 1) {
+        drawEvolutionChart(strats, history);
+        await new Promise((r) => requestAnimationFrame(r));
+      }
+    }
+    drawEvolutionChart(strats, history);
+    drawRanking(strats, shares);
+    evolveActive = false;
+    document.getElementById('btnEvolve').disabled = false;
+    document.getElementById('btnStopEvolve').disabled = true;
+  }
+  document.getElementById('btnEvolve').addEventListener('click', runEvolution);
+  document.getElementById('btnStopEvolve').addEventListener('click', () => { evolveActive = false; });
+
+  function drawEvolutionChart(strats, history) {
+    const canvas = document.getElementById('evoCanvas');
+    const dpr = fitCanvas(canvas);
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#1a2133';
+    ctx.fillRect(0, 0, w, h);
+    const n = strats.length;
+    const G = history.length;
+    for (let g = 0; g < G - 1; g++) {
+      const x0 = (g / (G - 1)) * w, x1 = ((g + 1) / (G - 1)) * w;
+      let cum0 = 0, cum1 = 0;
+      for (let i = 0; i < n; i++) {
+        const y0a = h - cum0 * h, y0b = h - (cum0 + history[g][i]) * h;
+        const y1a = h - cum1 * h, y1b = h - (cum1 + history[g + 1][i]) * h;
+        ctx.fillStyle = strats[i].color;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0a);
+        ctx.lineTo(x1, y1a);
+        ctx.lineTo(x1, y1b);
+        ctx.lineTo(x0, y0b);
+        ctx.closePath();
+        ctx.fill();
+        cum0 += history[g][i];
+        cum1 += history[g + 1][i];
+      }
+    }
+    const legend = document.getElementById('evoLegend');
+    legend.innerHTML = strats.map((s, i) => `<span style="display:inline-flex;align-items:center;gap:5px;"><i style="width:9px;height:9px;border-radius:50%;background:${s.color};display:inline-block;"></i>${s.name} (${(history[history.length - 1][i] * 100).toFixed(1)}%)</span>`).join('');
+  }
+
+  function drawRanking(strats, shares) {
+    const order = strats.map((s, i) => ({ s, share: shares[i] })).sort((a, b) => b.share - a.share);
+    const el = document.getElementById('evoRanking');
+    el.innerHTML = '<b style="font-size:12px;">Final population:</b><ul class="rank-list">' + order.map((o) => `<li><span>${o.s.name}</span><span style="font-family:var(--mono);">${(o.share * 100).toFixed(2)}%</span></li>`).join('') + '</ul>';
+  }
+
+  // ---------- Canvas util ----------
+  function fitCanvas(canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    return dpr;
+  }
+
+  // initial render
+  runTournament();
+})();
+</script>
+</body>
+</html>
