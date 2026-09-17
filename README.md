@@ -6,6 +6,29 @@ No install, no build step, no dependencies. It's a single HTML file — open it 
 
 ![Strategies, payoffs, and the auto-run tournament](screenshots/1-tournament.png)
 
+## How the pieces fit together
+
+The tournament and the evolutionary run are two different consumers of the same underlying match engine:
+
+```mermaid
+flowchart TD
+    Strategies["Selected strategies"] --> Tournament["Round-robin tournament<br/>(every pair, N rounds each)"]
+    Tournament --> Matrix[("Avg payoff matrix<br/>strategy i vs strategy j")]
+    Matrix --> Ranking["Total-score ranking<br/>(bar chart)"]
+    Matrix --> Evolution["Evolutionary dynamics<br/>(replicator + mutation)"]
+    Evolution --> Population["Population share over<br/>generations (stacked chart)"]
+```
+
+One evolutionary generation, in detail:
+
+```mermaid
+flowchart TD
+    Shares["Current population shares"] --> Fitness["fitness_i = Σⱼ (matrix i,j · share_j)"]
+    Fitness --> Replicate["share_i' = share_i · fitness_i / avg_fitness"]
+    Replicate --> Mutate["blend in mutation rate<br/>(1−rate)·share' + rate·(1/n)"]
+    Mutate --> Shares
+```
+
 ## Quick start
 
 1. Download or clone this repo.
@@ -79,14 +102,56 @@ Try removing strategies from the roster before rerunning evolution — e.g., tak
 
 ![The same evolution run with a 3% mutation rate — nothing hits exactly 0%](screenshots/4-evolution-mutation.png)
 
-## How it works
+## How it works, in detail
 
-- **Match**: each strategy is a plain, stateless function of both players' move histories so far, called once per round — required since the same strategy object plays many different opponents across a tournament, so it can't keep its own private memory between matches.
-- **Tournament**: a full round-robin (including self-play), accumulating total scores and an average-payoff-per-round matrix.
-- **Evolution**: replicator dynamics — `share_i' = share_i · (fitness_i / average_fitness)`, renormalized each generation, using the same payoff matrix computed by the tournament. An optional mutation term blends in a small uniform share for every strategy each generation, `(1 − rate) · replicator_share + rate · (1/n)`, so nothing is ever driven to exact zero.
-- **Game presets**: the same payoff logic (`T`/`R`/`P`/`S`) reused with different value ordering — Prisoner's Dilemma, Stag Hunt, Chicken, and Deadlock are all the identical 2×2 symmetric game structure, just with different relative payoffs.
+### Strategies are stateless functions
 
-Everything lives in `index.html` with no external libraries — open it in a text editor to see exactly how it works.
+Every strategy has the same shape: `fn(myHistory, opponentHistory) → 'C' | 'D'`, called once per round with both players' moves so far (not including the round about to be played). This is a deliberate constraint, not just a style choice — the *same* strategy object plays dozens of different opponents across one tournament, so it cannot keep private memory (like "which round am I retaliating on") between matches. Anything a strategy needs to know has to be derivable from the history arrays it's handed each call. Tit for Tat only needs the opponent's last move; Grim Trigger needs to know if `'D'` ever appears in the opponent's history at all; Tester needs to check what the opponent played at a specific index to know whether it "took the bait."
+
+### A single match
+
+```
+for each round:
+  a = strategyA.fn(movesA, movesB)
+  b = strategyB.fn(movesB, movesA)
+  # apply noise (flip a/b independently with some probability) if enabled
+  scoreA += payoff(a, b);  scoreB += payoff(b, a)
+  movesA.push(a);          movesB.push(b)
+```
+
+Moves are simultaneous — each strategy only ever sees rounds *before* the current one, never the opponent's move in the same round, which is what makes "Tester"'s opening probe meaningful (the opponent can't react to it until the following round).
+
+### Payoff matrix and game presets
+
+`payoff(mine, theirs)` is a lookup into four values: both cooperate → `R`; both defect → `P`; you defect against a cooperator → `T`; you cooperate against a defector → `S`. Every game preset in this app is the *same* lookup table with the four values reordered:
+
+| Game | Ordering | What that ordering means |
+|---|---|---|
+| Prisoner's Dilemma | T > R > P > S | Defecting wins one-on-one, but mutual cooperation beats mutual defection |
+| Stag Hunt | R > T > P > S | Mutual cooperation is the single best outcome — but risky to count on |
+| Chicken | T > R > S > P | Mutual defection is the *worst* outcome for both |
+| Deadlock | T > P > R > S | Defecting is simply better; there's no real tension |
+
+### Tournament
+
+A full round-robin — every strategy against every other strategy, including itself — for a fixed number of rounds per match. Rather than simulate `i vs j` and `j vs i` as two separate matches, one match produces both strategies' scores directly, which are recorded into an `avg payoff per round` matrix (`matrix[i][j]` = strategy i's average score per round against strategy j). That same matrix does double duty as both the tournament's score matrix display and the input to evolutionary dynamics.
+
+### Evolutionary dynamics (replicator equation)
+
+Given population shares `p₁...pₙ` (one per strategy) and the payoff matrix above, each generation:
+
+```
+fitness_i     = Σⱼ matrix[i][j] · p_j          (expected payoff against the current population mix)
+avg_fitness   = Σᵢ fitness_i · p_i
+p_i'          = p_i · (fitness_i / avg_fitness)   ← replicator update
+p_i''         = (1 − mutation_rate) · p_i' + mutation_rate · (1/n)   ← optional mutation blend
+```
+
+Strategies scoring above the population average grow their share; below-average strategies shrink, and without mutation can shrink all the way to (floating-point) zero — permanent extinction, exactly as Axelrod's original simulations found for the uncooperative strategies. The mutation term is a standard mutation-selection balance: a constant trickle of every strategy regardless of current fitness, so nothing is ever driven to *exactly* zero and a strategy can in principle re-invade later if the population mix shifts back in its favor.
+
+### Code layout
+
+Everything lives in `index.html` with no external dependencies. Top-to-bottom: `Strategies → Payoff function → Match/tournament engine → Tournament chart & matrix rendering → Human-vs-strategy panel → Evolutionary dynamics → Stacked-area chart rendering → UI wiring`.
 
 ## Related projects
 
